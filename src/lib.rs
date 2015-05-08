@@ -1628,9 +1628,8 @@ mod test {
 
         let mut count = 0usize;
         loop {
-            println!("==============> {:?}", count);
             count += 1;
-            if count >= 100 { break; }
+            assert!(count < 100);
 
             match sentinel_obj.add_claim(request.clone(), claimant.clone(), signature.clone(), claim.clone()) {
                 Some(_) => {
