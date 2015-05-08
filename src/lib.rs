@@ -33,11 +33,12 @@
 //! The claims_threshold specifies a minimal threshold on the number of verified claims before
 //! sentinel will attempt to merge these verified claims.
 
-// extern crate sodiumoxide;
-// extern crate cbor;
+extern crate cbor;
 extern crate rustc_serialize;
 extern crate accumulator;
 extern crate sodiumoxide;
+extern crate rand;
+extern crate routing;
 
 // mod frequency;
 // use std::collections::HashMap;
@@ -109,12 +110,14 @@ impl<Request, Claim, Name, Signature>
 
         match self.keys_accumulator.get(&request) {
             Some((_, set_of_keys)) => {
+                println!("==============5");
                 self.claim_accumulator.add(request.clone(), (claimant, signature, claim))
                     .and_then(|(_, claims)| self.validate(&claims, &set_of_keys))
                     .and_then(|verified_claims| self.resolve(&verified_claims))
                     .and_then(|merged_claim| return Some((request, merged_claim)))
             },
             None => {
+                println!("==============9");
                 request.get_signing_keys();
                 self.claim_accumulator.add(request, (claimant, signature, claim));
                 return None;
@@ -493,6 +496,7 @@ where E: Clone + Ord {
         if count >= min_count as usize { Some(element) } else { None }
     })
 }
+*/
 
 #[cfg(test)]
 mod test {
@@ -500,14 +504,18 @@ mod test {
   use super::*;
   use std::cmp;
   use sodiumoxide::crypto;
+  use rustc_serialize::{Encodable, Decodable};
+  use rand;
+  use cbor;
+  use sodiumoxide::crypto::hash::sha512::hash;
+  use rand::{thread_rng, Rng};
+  use rand::distributions::{IndependentSample, Range};
+  /*
   use types;
   use name_type::closer_to_target;
   use NameType;
   use message_header;
   use messages;
-  use rustc_serialize::{Encodable, Decodable};
-  use rand;
-  use cbor;
   use test_utils::Random;
   use message_header::MessageHeader;
   use messages::{RoutingMessage, MessageTypeTag};
@@ -515,13 +523,10 @@ mod test {
   use messages::get_group_key_response::GetGroupKeyResponse;
   use types::{MessageId, Pmid, PublicPmid, GroupAddress, NodeAddress, DestinationAddress,
               SourceAddress, Authority, PublicSignKey, GROUP_SIZE, vector_as_u8_64_array};
-  use sodiumoxide::crypto::hash::sha512::hash;
-  use rand::{thread_rng, Rng};
-  use rand::distributions::{IndependentSample, Range};
+              */
 
 
-
-
+/*
   pub struct AddSentinelMessage {
     header : message_header::MessageHeader,
     tag : messages::MessageTypeTag,
@@ -1052,10 +1057,12 @@ mod test {
   assert_eq!(0, trace_get_keys.count_get_client_key_calls(&embedded_signature_group.get_group_address()));
   assert_eq!(1, trace_get_keys.count_get_group_key_calls(&embedded_signature_group.get_group_address()));
   }
-
-
+*/
 
   // SentinelMessages
+
+    /*
+  use routing::*;
 
   pub struct SentinelMessages {
     pmids: Vec<Pmid>,
@@ -1577,6 +1584,73 @@ mod test {
       assert!(resolved.is_none());
     }
   }
-
-}
 */
+//{
+    static mut SIMULATE_GET_SIGNING_KEYS: bool = false;
+
+    type NameType = Vec<u8>;
+    type Claim = Vec<u8>;
+    type Signature = crypto::sign::Signature;
+
+    fn generate_vec_u8() -> Vec<u8> {
+        let mut vec = Vec::with_capacity(64);
+        for _ in 0..64 {
+            vec.push(rand::random::<u8>());
+        }
+        vec
+    }
+
+    #[derive(Clone, PartialOrd, Ord, Eq, PartialEq)]
+    struct Request {
+        data: Vec<u8>,
+    }
+
+    impl GetSigningKeys<NameType> for Request {
+        fn get_signing_keys(&self) {
+            unsafe { SIMULATE_GET_SIGNING_KEYS = true; }
+        }
+    }
+
+    #[test]
+    fn sentinel_test() {
+        let mut signing_keys: Vec<(NameType, crypto::sign::PublicKey)> = Vec::new();
+        let quorum_size = 19usize;
+        let mut sentinel_obj: Sentinel<Request, Claim, NameType, Signature> = Sentinel::new(quorum_size, quorum_size);
+
+        let request = Request { data: generate_vec_u8(), };
+        let claimant = generate_vec_u8();
+        let signature = crypto::sign::Signature([3u8; 64]);
+        let claim = generate_vec_u8();
+
+        for _ in 0..30 {
+            signing_keys.push((claimant.clone(), crypto::sign::gen_keypair().0));
+        }
+
+        let mut count = 0usize;
+        loop {
+            println!("==============> {:?}", count);
+            count += 1;
+            if count >= 100 { break; }
+
+            match sentinel_obj.add_claim(request.clone(), claimant.clone(), signature.clone(), claim.clone()) {
+                Some(_) => {
+                    println!("Here");
+                    break;
+                },
+                None => {
+                    println!("Not Here");
+                    unsafe {
+                        if SIMULATE_GET_SIGNING_KEYS {
+                            match sentinel_obj.add_keys(request.clone(), signing_keys.clone()) {
+                                Some(_) => break,
+                                None => (),
+                            }
+                            SIMULATE_GET_SIGNING_KEYS = false;
+                        }
+                    }
+
+                }
+            }
+        }
+    }
+}
